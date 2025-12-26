@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Unifi DNS Sync
 
 A tool to synchronize DNS records across multiple Unifi controllers.
@@ -28,3 +29,7 @@ This repository includes a GitHub Action to automatically build and push the ima
 
 > [!TIP]
 > Make sure to update the `image.repository` in `charts/unifi-dns-sync/values.yaml` to match your own GitHub username.
+=======
+# unifi-dns-sync
+Python-based utility/container to synchronize DNS records across Unifi controllers
+>>>>>>> unifi-dns-sync/main
