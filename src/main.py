@@ -32,6 +32,12 @@ class UnifiController:
             'Accept': 'application/json'
         }
 
+    def _normalize_domain(self, domain):
+        """Normalize domain to lowercase and strip trailing dots."""
+        if not domain:
+            return ""
+        return domain.lower().rstrip('.')
+
     def _resolve_site_id(self):
         """Find the site UUID that matches self.site_name."""
         if self.site_id:
@@ -72,8 +78,13 @@ class UnifiController:
             response = requests.get(url, headers=self.headers, verify=self.verify_ssl, timeout=10)
             if response.status_code == 200:
                 data = response.json().get('data', [])
-                # Filter by allowed record types
-                filtered_data = [r for r in data if r.get('type') in self.allowed_record_types]
+                # Filter by allowed record types and normalize domains
+                filtered_data = []
+                for r in data:
+                    if r.get('type') in self.allowed_record_types:
+                        r['domain'] = self._normalize_domain(r.get('domain'))
+                        filtered_data.append(r)
+                
                 logger.info(f"Successfully fetched {len(filtered_data)} DNS policy records from {self.host} (filtered from {len(data)})")
                 return filtered_data
             else:
@@ -117,6 +128,8 @@ class UnifiController:
                                 full_name = f"{name}.{self.domain_suffix.lstrip('.')}"
                             # else: already appears to have a domain part, don't append
                         
+                        full_name = self._normalize_domain(full_name)
+                        
                         # Convert to A_RECORD format for synchronization
                         records.append({
                             'type': 'A_RECORD',
@@ -142,8 +155,14 @@ class UnifiController:
         if not site_id:
             return False
 
-        logger.info(f"Creating record {record.get('domain', 'unknown')} on {self.host}...")
+        domain = record.get('domain', 'unknown')
+        rtype = record.get('type', 'UNKNOWN')
+        val = record.get('ipv4Address') or record.get('alias') or record.get('value') or record.get('host')
+        
+        logger.info(f"Creating {rtype} record '{domain}' -> '{val}' on {self.host}...")
         url = f"{self.base_url}/sites/{site_id}/dns/policies"
+        # Ensure domain is normalized before sending
+        record['domain'] = self._normalize_domain(domain)
         # Remove ID and other response-only fields before sending
         payload = {k: v for k, v in record.items() if k not in ['id']}
         try:
@@ -151,9 +170,29 @@ class UnifiController:
             if response.status_code in [200, 201]:
                 logger.info(f"Successfully created record on {self.host}")
                 return True
+            
+            # Handle specific 400 errors for overlaps/conflicts
+            if response.status_code == 400:
+                try:
+                    error_data = response.json()
+                    error_code = error_data.get('code')
+                    error_msg = error_data.get('message')
+                    
+                    overlap_codes = [
+                        'api.dns.policy.validation.overlap-with-local-dns',
+                        'api.dns.policy.validation.cname-alias-overlap'
+                    ]
+                    
+                    if error_code in overlap_codes:
+                        logger.info(f"Record '{domain}' already exists or conflicts on {self.host} (internal UniFi conflict). Skipping.")
+                        return True # Treat as success since the record is effectively present
+                    
+                    logger.error(f"Failed to create record on {self.host}: 400 {error_code} - {error_msg}")
+                except Exception:
+                    logger.error(f"Failed to create record on {self.host}: 400 {response.text}")
             else:
                 logger.error(f"Failed to create record on {self.host}: {response.status_code} {response.text}")
-                return False
+            return False
         except Exception as e:
             logger.error(f"Error creating record on {self.host}: {str(e)}")
             return False
@@ -217,7 +256,7 @@ def sync_dns():
                 elif rtype == 'MX_RECORD': val = f"{r.get('host')}:{r.get('priority')}"
                 elif rtype == 'TXT_RECORD': val = r.get('value')
                 
-                key = (rtype, r.get('domain'), val)
+                key = (rtype, self._normalize_domain(r.get('domain')), val)
                 if key not in record_map:
                     record_map[key] = {'record': r, 'origins': set()}
                 record_map[key]['origins'].add(host)
@@ -244,7 +283,7 @@ def sync_dns():
             elif rtype == 'MX_RECORD': val = f"{r.get('host')}:{r.get('priority')}"
             elif rtype == 'TXT_RECORD': val = r.get('value')
             
-            key = (rtype, r.get('domain'), val)
+            key = (rtype, self._normalize_domain(r.get('domain')), val)
             current_dns_map[key] = r.get('id')
         
         # Determine what to add

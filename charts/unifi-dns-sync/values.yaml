@@ -19,7 +19,7 @@ syncIntervalSeconds: 3600
 # List of controllers
 # Example:
 # controllers:
-#   - host: "10.250.0.1"
+#   - host: "10.0.0.1"
 #     api_key: "YOUR_API_KEY"
 #     site: "default"
 #     sync_dhcp_clients: true
