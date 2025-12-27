@@ -54,6 +54,14 @@ webUi:
     type: ClusterIP
     port: 80
 
+gateway:
+  enabled: false
+  create: false
+  host: dns-sync.mydomain.com
+  # className: traefik
+  # name: unifi-dns-sync
+  # namespace: default
+
 nodeSelector: {}
 
 tolerations: []

@@ -107,16 +107,36 @@ class DatabaseManager:
         
         conn = self._get_connection()
         with conn:
+            # Check if record exists
+            cursor = conn.execute("SELECT 1 FROM dns_records WHERE id = ?", (record_id,))
+            exists = cursor.fetchone()
+            
             # Upsert the record itself
             conn.execute(
                 "INSERT OR REPLACE INTO dns_records (id, type, domain, target, record_raw) VALUES (?, ?, ?, ?, ?)",
                 (record_id, rtype, domain, target, record_raw)
             )
-            # Link to origin
-            conn.execute(
-                "INSERT OR IGNORE INTO record_origins (record_id, site_uuid, first_seen) VALUES (?, ?, ?)",
-                (record_id, site_uuid, datetime.utcnow())
-            )
+            
+            if not exists:
+                logger.info(f"New DNS record discovered: {rtype} {domain} -> {target}")
+            
+            # Check if origin already exists for this site
+            cursor = conn.execute("SELECT 1 FROM record_origins WHERE record_id = ? AND site_uuid = ?", (record_id, site_uuid))
+            origin_exists = cursor.fetchone()
+            
+            if not origin_exists:
+                if exists:
+                    logger.info(f"Record {domain} ({rtype}) discovered on new site {site_uuid}")
+                
+                # Link to origin
+                conn.execute(
+                    "INSERT OR IGNORE INTO record_origins (record_id, site_uuid, first_seen) VALUES (?, ?, ?)",
+                    (record_id, site_uuid, datetime.utcnow())
+                )
+                
+                # Log a DISCOVERY event
+                self.log_sync_event(record_id, site_uuid, 'DISCOVERY')
+                
         return record_id
 
     def log_sync_event(self, record_id, site_uuid, status):

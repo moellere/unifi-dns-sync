@@ -274,6 +274,7 @@ def sync_dns():
             try:
                 dns_records = controller.get_dns_records()
                 client_records = controller.get_client_records()
+                logger.info(f"Importing {len(dns_records)} DNS policies and {len(client_records)} client records from {controller.host} (Site: {site_name})")
                 
                 for r in (dns_records + client_records):
                     rtype = r.get('type')
