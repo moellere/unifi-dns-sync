@@ -2,6 +2,14 @@
 
 A tool to synchronize DNS records across multiple Unifi controllers.
 
+# WARNING!
+
+This tool is in active development and is not yet ready for production use. It is provided as-is and should be used with caution. It is DANGEROUS to use this tool in a production environment as it may cause data loss or corruption.  Did I say it was dangerous?  I mean it.  It's going to make changes to your DNS records on your Unifi controllers.  **If you don't know what you're doing, this could be really bad.**  If you DO know what you're doing, and are making assumptions about what may happen if you use this, it could still be bad!
+
+Understand the code, review the TODOs, and **make sure you know what you're doing before using this tool!**
+
+If it makes changes to your DNS records, it will **not** attempt to reverse those changes.  It will only attempt to make changes to ensure that all controllers have the same records.  There is currently no way to recover other than manually recreating DNS entries, or restoring from a backup.  **You DID create a backup before you started using this tool, right?**
+
 ## Features
 - Periodically fetches DNS records from configured controllers.
 - Consolidates unique records based on (name, record, type).
