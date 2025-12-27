@@ -8,3 +8,4 @@ venv/
 ENV/
 .idea/
 .vscode/
+src/config/controllers.json

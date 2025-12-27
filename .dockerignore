@@ -7,3 +7,4 @@ Dockerfile
 .gitignore
 README.md
 charts/
+src/config/controllers.json

@@ -19,11 +19,12 @@ syncIntervalSeconds: 3600
 # List of controllers
 # Example:
 # controllers:
-#   - host: "10.250.6.1"
-#     port: 443
-#     username: "admin"
-#     password: "password"
+#   - host: "10.250.0.1"
+#     api_key: "YOUR_API_KEY"
 #     site: "default"
+#     sync_dhcp_clients: true
+#     domain_suffix: "home.arpa"
+#     allowed_record_types: ["A_RECORD", "CNAME_RECORD"]
 #     verify_ssl: false
 controllers: []
 

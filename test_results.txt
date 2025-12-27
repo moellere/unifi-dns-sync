@@ -1,0 +1,201 @@
+python : 2025-12-26 
+22:14:40,523 - INFO - 
+Resolving site ID for 
+site name 'MySite' on 
+1.2.3.4...
+At line:1 char:1
++ python 
+src/test_api.py 2>&1 
+| Out-File -FilePath 
+test_results.txt -En 
+...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (2025-12-26   
+  22:1...' on 1.2.    
+3.4...:String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+2025-12-26 
+22:14:40,523 - INFO - 
+Resolved site 
+'MySite' to ID 
+'uuid-mysite'
+2025-12-26 
+22:14:40,523 - INFO - 
+Creating record 
+new.com on 1.2.3.4...
+2025-12-26 
+22:14:40,523 - INFO - 
+Successfully created 
+record on 1.2.3.4
+.2025-12-26 
+22:14:40,524 - INFO - 
+Resolving site ID for 
+site name 'MySite' on 
+1.2.3.4...
+2025-12-26 
+22:14:40,524 - INFO - 
+Resolved site 
+'MySite' to ID 
+'uuid-mysite'
+2025-12-26 
+22:14:40,524 - INFO - 
+Deleting record 
+uuid-123 from 
+1.2.3.4...
+2025-12-26 
+22:14:40,524 - INFO - 
+Successfully deleted 
+record from 1.2.3.4
+.2025-12-26 
+22:14:40,524 - INFO - 
+Resolving site ID for 
+site name 'MySite' on 
+1.2.3.4...
+2025-12-26 
+22:14:40,524 - INFO - 
+Resolved site 
+'MySite' to ID 
+'uuid-mysite'
+2025-12-26 
+22:14:40,524 - INFO - 
+Fetching client 
+records from 1.2.3.4 
+(Site: MySite)...
+2025-12-26 
+22:14:40,524 - INFO - 
+Successfully fetched 
+1 client records from 
+1.2.3.4
+.2025-12-26 
+22:14:40,524 - INFO - 
+Resolving site ID for 
+site name 'MySite' on 
+1.2.3.4...
+2025-12-26 
+22:14:40,524 - INFO - 
+Resolved site 
+'MySite' to ID 
+'uuid-mysite'
+2025-12-26 
+22:14:40,524 - INFO - 
+Fetching client 
+records from 1.2.3.4 
+(Site: MySite)...
+2025-12-26 
+22:14:40,524 - INFO - 
+Successfully fetched 
+1 client records from 
+1.2.3.4
+.2025-12-26 
+22:14:40,525 - INFO - 
+Resolving site ID for 
+site name 'MySite' on 
+1.2.3.4...
+2025-12-26 
+22:14:40,525 - INFO - 
+Resolved site 
+'MySite' to ID 
+'uuid-mysite'
+2025-12-26 
+22:14:40,525 - INFO - 
+Fetching DNS records 
+from 1.2.3.4 (Site: 
+MySite)...
+2025-12-26 
+22:14:40,525 - INFO - 
+Successfully fetched 
+1 DNS policy records 
+from 1.2.3.4
+.E
+======================
+======================
+======================
+====
+ERROR: test_sync_dns_o
+rigin_tracking (__main
+__.TestUnifiController
+.test_sync_dns_origin_
+tracking)
+----------------------
+----------------------
+----------------------
+----
+Traceback (most 
+recent call last):
+  File "C:\Program Fil
+es\Python311\Lib\unitt
+est\mock.py", line 
+1359, in patched
+    return 
+func(*newargs, 
+**newkeywargs)
+           ^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^
+  File "C:\Users\enoch
+\Projects\GitHub\unifi
+-dns-sync\src\test_api
+.py", line 151, in tes
+t_sync_dns_origin_trac
+king
+    main.sync_dns()
+  File "C:\Users\enoch
+\Projects\GitHub\unifi
+-dns-sync\src\main.py"
+, line 189, in 
+sync_dns
+    dns_records = cont
+roller.get_dns_records
+()
+                  ^^^^
+^^^^^^^^^^^^^^^^^^^^^^
+^^
+  File "C:\Program Fil
+es\Python311\Lib\unitt
+est\mock.py", line 
+1108, in __call__
+    return self._mock_
+call(*args, **kwargs)
+           ^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Fil
+es\Python311\Lib\unitt
+est\mock.py", line 
+1112, in _mock_call
+    return self._execu
+te_mock_call(*args, 
+**kwargs)
+           ^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^
+  File "C:\Program Fil
+es\Python311\Lib\unitt
+est\mock.py", line 
+1173, in 
+_execute_mock_call
+    result = 
+effect(*args, 
+**kwargs)
+             ^^^^^^^^^
+^^^^^^^^^^^^^^
+TypeError: TestUnifiCo
+ntroller.test_sync_dns
+_origin_tracking.<loca
+ls>.get_dns_se() 
+missing 1 required 
+positional argument: 
+'self'
+
+----------------------
+----------------------
+----------------------
+----
+Ran 6 tests in 0.005s
+
+FAILED (errors=1)

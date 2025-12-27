@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Unifi DNS Sync
 
 A tool to synchronize DNS records across multiple Unifi controllers.
@@ -13,6 +12,39 @@ A tool to synchronize DNS records across multiple Unifi controllers.
 2. Create a `controllers.json` file.
 3. Run the script: `python src/main.py`
 
+## Configuration
+
+The application requires a `controllers.json` file. By default, it looks for it at `/config/controllers.json`, but you can override this with the `CONFIG_PATH` environment variable.
+
+### `controllers.json` Example
+```json
+[
+  {
+    "host": "10.0.0.1",
+    "api_key": "YOUR_INTEGRATION_API_KEY",
+    "site": "default",
+    "sync_dhcp_clients": true,
+    "domain_suffix": "home.arpa",
+    "allowed_record_types": ["A_RECORD", "CNAME_RECORD"],
+    "verify_ssl": false
+  },
+  {
+    "host": "unifi.example.com",
+    "api_key": "ANOTHER_API_KEY",
+    "site": "HomeSite",
+    "verify_ssl": true
+  }
+]
+```
+
+### Environment Variables
+- `SYNC_INTERVAL_SECONDS`: How often to synchronize (default: `3600`).
+- `CONFIG_PATH`: Path to the configuration file (default: `/config/controllers.json`).
+- `LOG_LEVEL`: Logging level (default: `INFO`).
+
+### Origin Tracking
+The script automatically tracks which controller a record was pulled from (either as a DNS policy or a DHCP client). It will **not** attempt to create or update that record on its source controller, ensuring that each controller remains the primary source of truth for its own local records.
+
 ## Build and Publish
 
 ### Local Build
@@ -21,15 +53,5 @@ To build the image locally:
 docker build -t unifi-dns-sync:latest .
 ```
 
-### GitHub Actions (Recommended)
-This repository includes a GitHub Action to automatically build and push the image to [GitHub Container Registry (GHCR)](https://ghcr.io) on every push to the `main` branch or when a version tag (e.g., `v1.0.0`) is created.
-
-1. Push your code to GitHub.
-2. The image will be available at `ghcr.io/YOUR_USERNAME/unifi-dns-sync:latest`.
-
-> [!TIP]
-> Make sure to update the `image.repository` in `charts/unifi-dns-sync/values.yaml` to match your own GitHub username.
-=======
-# unifi-dns-sync
-Python-based utility/container to synchronize DNS records across Unifi controllers
->>>>>>> unifi-dns-sync/main
+### GitHub Actions
+This repository includes a GitHub Action to automatically build and push the image to GHCR on every push to `main`.
