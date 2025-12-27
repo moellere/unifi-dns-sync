@@ -256,7 +256,7 @@ def sync_dns():
                 elif rtype == 'MX_RECORD': val = f"{r.get('host')}:{r.get('priority')}"
                 elif rtype == 'TXT_RECORD': val = r.get('value')
                 
-                key = (rtype, self._normalize_domain(r.get('domain')), val)
+                key = (rtype, controller._normalize_domain(r.get('domain')), val)
                 if key not in record_map:
                     record_map[key] = {'record': r, 'origins': set()}
                 record_map[key]['origins'].add(host)
@@ -283,7 +283,7 @@ def sync_dns():
             elif rtype == 'MX_RECORD': val = f"{r.get('host')}:{r.get('priority')}"
             elif rtype == 'TXT_RECORD': val = r.get('value')
             
-            key = (rtype, self._normalize_domain(r.get('domain')), val)
+            key = (rtype, controller._normalize_domain(r.get('domain')), val)
             current_dns_map[key] = r.get('id')
         
         # Determine what to add
