@@ -3,8 +3,10 @@ import json
 import time
 import logging
 import requests
+import threading
 from urllib3.exceptions import InsecureRequestWarning
 from database import DatabaseManager
+from web import app as web_app
 
 # Suppress insecure request warnings for self-signed certificates
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
@@ -264,7 +266,6 @@ def sync_dns():
             db.update_site(site_uuid, controller.host, site_name)
             
             # Temporarily override site_id on controller to fetch records for THIS site
-            # This is a bit hacky, but avoids creating a Controller instance per site for now
             orig_site_id = controller.site_id
             orig_site_name = controller.site_name
             controller.site_id = site_uuid
@@ -335,6 +336,15 @@ def sync_dns():
                 controller.site_name = orig_site_name
 
 def main():
+    # Start Web UI in a separate thread
+    web_port = int(os.getenv('WEB_UI_PORT', '5000'))
+    web_thread = threading.Thread(
+        target=lambda: web_app.run(host='0.0.0.0', port=web_port, debug=False, use_reloader=False),
+        daemon=True
+    )
+    web_thread.start()
+    logger.info(f"Web UI started on port {web_port}")
+
     sync_interval = int(os.getenv('SYNC_INTERVAL_SECONDS', '3600'))
     while True:
         try:

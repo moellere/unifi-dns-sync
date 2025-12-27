@@ -1,7 +1,7 @@
 # Project Roadmap & TODO
 
 ## Persistence & Improved Sync
-- [ ] **SQLite Migration**: Implement a local database to track record states, detect deletions, and provide faster lookups. 
+- [X] **SQLite Migration**: Implement a local database to track record states, detect deletions, and provide faster lookups. 
   - *Reference*: [sqlite_migration.md](docs/design/sqlite_migration.md)
 - [ ] **Deletion Propagation**: Support removing records from controllers if they are deleted from others or no longer in the consolidated list.
 

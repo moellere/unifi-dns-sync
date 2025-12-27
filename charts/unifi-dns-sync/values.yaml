@@ -47,6 +47,13 @@ resources: {}
   #   cpu: 100m
   #   memory: 128Mi
 
+webUi:
+  enabled: true
+  port: 5000
+  service:
+    type: ClusterIP
+    port: 80
+
 nodeSelector: {}
 
 tolerations: []

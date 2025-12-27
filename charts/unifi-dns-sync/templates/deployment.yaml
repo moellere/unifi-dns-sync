@@ -36,6 +36,12 @@ spec:
               value: "/config/controllers.json"
             - name: DB_PATH
               value: "/data/dns_sync.db"
+            - name: WEB_UI_PORT
+              value: {{ .Values.webUi.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.webUi.port }}
+              protocol: TCP
           volumeMounts:
             - name: config-volume
               mountPath: /config
