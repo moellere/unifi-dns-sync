@@ -34,16 +34,27 @@ spec:
                   key: SYNC_INTERVAL_SECONDS
             - name: CONFIG_PATH
               value: "/config/controllers.json"
+            - name: DB_PATH
+              value: "/data/dns_sync.db"
           volumeMounts:
             - name: config-volume
               mountPath: /config
               readOnly: true
+            - name: data-volume
+              mountPath: /data
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: config-volume
           secret:
             secretName: {{ include "unifi-dns-sync.fullname" . }}-credentials
+        - name: data-volume
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "unifi-dns-sync.fullname" .) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
