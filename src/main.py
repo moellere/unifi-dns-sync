@@ -132,22 +132,23 @@ class UnifiController:
                 clients = response.json().get('data', [])
                 records = []
                 for client in clients:
-                    raw_name = client.get('name', '')
+                    raw_name = client.get('name') or client.get('hostname') or client.get('displayName')
                     ip = client.get('ipAddress')
                     
                     if raw_name and ip:
-                        # 1. Strip everything after a space (e.g. "Device MAC" -> "Device")
-                        name = raw_name.split(' ')[0]
+                        # 1. Sanitize name: replace spaces with hyphens, remove other DNS-unsafe chars
+                        import re
+                        name = re.sub(r'[^a-zA-Z0-9-]', '-', raw_name).strip('-')
                         if not name:
                             continue
                             
                         # 2. Smart domain suffixing:
-                        # Only append if it doesn't already have a dot (assume dot = already has a domain)
+                        # Only append if it doesn't already end with the suffix
                         full_name = name
                         if self.domain_suffix:
-                            if '.' not in name:
-                                full_name = f"{name}.{self.domain_suffix.lstrip('.')}"
-                            # else: already appears to have a domain part, don't append
+                            suffix = self.domain_suffix.lstrip('.')
+                            if not name.lower().endswith(f".{suffix.lower()}") and name.lower() != suffix.lower():
+                                full_name = f"{name}.{suffix}"
                         
                         full_name = self._normalize_domain(full_name)
                         
