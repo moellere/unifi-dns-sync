@@ -4,6 +4,7 @@ import time
 import logging
 import requests
 from urllib3.exceptions import InsecureRequestWarning
+from database import DatabaseManager
 
 # Suppress insecure request warnings for self-signed certificates
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
@@ -14,6 +15,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Initialize database
+db = DatabaseManager(os.getenv('DB_PATH', '/data/dns_sync.db'))
 
 class UnifiController:
     def __init__(self, config):
@@ -66,6 +70,23 @@ class UnifiController:
         except Exception as e:
             logger.error(f"Error listing sites on {self.host}: {str(e)}")
             return None
+
+    def get_all_sites(self):
+        """Fetch all sites available on this controller."""
+        logger.info(f"Fetching all sites from {self.host}...")
+        url = f"{self.base_url}/sites"
+        try:
+            response = requests.get(url, headers=self.headers, verify=self.verify_ssl, timeout=10)
+            if response.status_code == 200:
+                sites = response.json().get('data', [])
+                logger.info(f"Found {len(sites)} sites on {self.host}")
+                return sites
+            else:
+                logger.error(f"Failed to list sites on {self.host}: {response.status_code} {response.text}")
+                return []
+        except Exception as e:
+            logger.error(f"Error listing sites on {self.host}: {str(e)}")
+            return []
 
     def get_dns_records(self):
         site_id = self._resolve_site_id()
@@ -231,74 +252,86 @@ def sync_dns():
 
     controllers = [UnifiController(cfg) for cfg in controllers_config]
     
-    # 1. Fetch all records and track origins
-    # key: (rtype, domain, val) -> value: { 'record': data, 'origins': set(hosts) }
-    record_map = {}
-    successful_controllers = []
-    
+    # 1. Discovery Phase: Fetch and Persist
     for controller in controllers:
-        host = controller.host
-        # Fetch actual DNS records
-        dns_records = controller.get_dns_records()
-        # Fetch client records
-        client_records = controller.get_client_records()
+        db.update_controller(controller.host, controller.api_key)
+        sites = controller.get_all_sites()
         
-        combined = dns_records + client_records
-        
-        if combined or controller.api_key:
-            successful_controllers.append(controller)
-            for r in combined:
-                val = None
-                rtype = r.get('type')
-                if rtype == 'A_RECORD': val = r.get('ipv4Address')
-                elif rtype == 'AAAA_RECORD': val = r.get('ipv6Address')
-                elif rtype == 'CNAME_RECORD': val = r.get('alias')
-                elif rtype == 'MX_RECORD': val = f"{r.get('host')}:{r.get('priority')}"
-                elif rtype == 'TXT_RECORD': val = r.get('value')
-                
-                key = (rtype, controller._normalize_domain(r.get('domain')), val)
-                if key not in record_map:
-                    record_map[key] = {'record': r, 'origins': set()}
-                record_map[key]['origins'].add(host)
-
-    if not successful_controllers:
-        logger.warning("No controllers could be accessed or all are empty. Skipping sync.")
-        return
-
-    logger.info(f"Consolidated list contains {len(record_map)} unique records.")
-
-    # 2. Update each controller
-    for controller in successful_controllers:
-        host = controller.host
-        current_records = controller.get_dns_records()
-        
-        # Create a map of existing DNS policy records on THIS controller
-        current_dns_map = {}
-        for r in current_records:
-            val = None
-            rtype = r.get('type')
-            if rtype == 'A_RECORD': val = r.get('ipv4Address')
-            elif rtype == 'AAAA_RECORD': val = r.get('ipv6Address')
-            elif rtype == 'CNAME_RECORD': val = r.get('alias')
-            elif rtype == 'MX_RECORD': val = f"{r.get('host')}:{r.get('priority')}"
-            elif rtype == 'TXT_RECORD': val = r.get('value')
+        for site in sites:
+            site_uuid = site.get('id')
+            site_name = site.get('name')
+            db.update_site(site_uuid, controller.host, site_name)
             
-            key = (rtype, controller._normalize_domain(r.get('domain')), val)
-            current_dns_map[key] = r.get('id')
-        
-        # Determine what to add
-        for key, data in record_map.items():
-            # RULE: Skip if already exists as a DNS policy on this controller
-            if key in current_dns_map:
-                continue
-                
-            # RULE: Skip if this controller is the ORIGIN of this record
-            if host in data['origins']:
-                logger.debug(f"Skipping record {key[1]} on {host} because it originated from this controller.")
-                continue
+            # Temporarily override site_id on controller to fetch records for THIS site
+            # This is a bit hacky, but avoids creating a Controller instance per site for now
+            orig_site_id = controller.site_id
+            orig_site_name = controller.site_name
+            controller.site_id = site_uuid
+            controller.site_name = site_name
             
-            # Create the record
-            controller.create_dns_record(data['record'])
+            try:
+                dns_records = controller.get_dns_records()
+                client_records = controller.get_client_records()
+                
+                for r in (dns_records + client_records):
+                    rtype = r.get('type')
+                    domain = controller._normalize_domain(r.get('domain'))
+                    val = r.get('ipv4Address') or r.get('alias') or r.get('value') or r.get('host')
+                    db.upsert_record(rtype, domain, val, json.dumps(r), site_uuid)
+            finally:
+                controller.site_id = orig_site_id
+                controller.site_name = orig_site_name
+
+    # 2. Sync Phase: Replicate from DB
+    all_records = db.get_all_records_with_origins()
+    logger.info(f"Consolidated list from DB contains {len(all_records)} unique records.")
+
+    for controller in controllers:
+        sites = controller.get_all_sites()
+        for site in sites:
+            site_uuid = site.get('id')
+            site_name = site.get('name')
+            
+            orig_site_id = controller.site_id
+            orig_site_name = controller.site_name
+            controller.site_id = site_uuid
+            controller.site_name = site_name
+            
+            try:
+                current_records = controller.get_dns_records()
+                current_dns_map = {}
+                for r in current_records:
+                    rtype = r.get('type')
+                    domain = controller._normalize_domain(r.get('domain'))
+                    val = r.get('ipv4Address') or r.get('alias') or r.get('value') or r.get('host')
+                    key = (rtype, domain, val)
+                    current_dns_map[key] = r.get('id')
+
+                for rec_row in all_records:
+                    rtype = rec_row['type']
+                    domain = rec_row['domain']
+                    target = rec_row['target']
+                    origins = rec_row['origin_site_uuids'].split(',')
+                    
+                    key = (rtype, domain, target)
+                    
+                    # RULE: Skip if already exists on this site
+                    if key in current_dns_map:
+                        continue
+                        
+                    # RULE: Skip if this specific site is an origin for this record
+                    if site_uuid in origins:
+                        logger.debug(f"Skipping record '{domain}' on site '{site_name}' ({controller.host}) because it originated here.")
+                        continue
+                    
+                    # Create the record
+                    record_data = json.loads(rec_row['record_raw'])
+                    if controller.create_dns_record(record_data):
+                        db.log_sync_event(rec_row['id'], site_uuid, 'CREATED')
+
+            finally:
+                controller.site_id = orig_site_id
+                controller.site_name = orig_site_name
 
 def main():
     sync_interval = int(os.getenv('SYNC_INTERVAL_SECONDS', '3600'))

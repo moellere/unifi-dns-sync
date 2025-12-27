@@ -16,6 +16,17 @@ fullnameOverride: ""
 
 syncIntervalSeconds: 3600
 
+persistence:
+  enabled: false
+  storageClass: ""
+  size: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  # Annotations for the PVC
+  annotations: {}
+  # Use an existing PVC instead of creating one
+  existingClaim: ""
+
 # List of controllers
 # Example:
 # controllers:
