@@ -27,7 +27,17 @@ persistence:
   # Use an existing PVC instead of creating one
   existingClaim: ""
 
-# List of controllers
+# Name of an existing Secret containing a `controllers.json` key.
+# Use this to keep controller API keys out of Helm values (e.g. manage the
+# Secret with sealed-secrets, SOPS, or external-secrets). When set, the chart
+# does not render its own credentials Secret and `controllers` below is ignored.
+# The Secret must contain a key named `controllers.json` whose value is the
+# JSON array described in the README.
+existingSecret: ""
+
+# List of controllers (rendered into a chart-managed Secret).
+# WARNING: api_key values set here end up in your Helm values (and your git
+# history if you commit them). Prefer existingSecret above for real deployments.
 # Example:
 # controllers:
 #   - host: "10.0.0.1"
