@@ -21,6 +21,20 @@ logger = logging.getLogger(__name__)
 # Initialize database
 db = DatabaseManager(os.getenv('DB_PATH', '/data/dns_sync.db'))
 
+# Response-only properties the Integration API returns on GET but rejects on
+# POST (400 api.request.unknown-property).
+RESPONSE_ONLY_FIELDS = ('id', 'metadata')
+
+def record_value(record):
+    """The value/target of a DNS policy record, across record types.
+
+    A/AAAA use ipv4Address/ipv6Address, CNAME uses targetDomain; the
+    remaining names cover older API shapes and client records.
+    """
+    return (record.get('ipv4Address') or record.get('ipv6Address')
+            or record.get('targetDomain') or record.get('alias')
+            or record.get('value') or record.get('host'))
+
 class UnifiController:
     def __init__(self, config):
         self.host = config.get('host')
@@ -181,14 +195,13 @@ class UnifiController:
 
         domain = record.get('domain', 'unknown')
         rtype = record.get('type', 'UNKNOWN')
-        val = record.get('ipv4Address') or record.get('alias') or record.get('value') or record.get('host')
-        
+        val = record_value(record)
+
         logger.info(f"Creating {rtype} record '{domain}' -> '{val}' on {self.host}...")
         url = f"{self.base_url}/sites/{site_id}/dns/policies"
         # Ensure domain is normalized before sending
         record['domain'] = self._normalize_domain(domain)
-        # Remove ID and other response-only fields before sending
-        payload = {k: v for k, v in record.items() if k not in ['id']}
+        payload = {k: v for k, v in record.items() if k not in RESPONSE_ONLY_FIELDS}
         try:
             response = requests.post(url, headers=self.headers, json=payload, verify=self.verify_ssl, timeout=10)
             if response.status_code in [200, 201]:
@@ -279,7 +292,7 @@ def sync_dns():
                 for r in (dns_records + client_records):
                     rtype = r.get('type')
                     domain = controller._normalize_domain(r.get('domain'))
-                    val = r.get('ipv4Address') or r.get('alias') or r.get('value') or r.get('host')
+                    val = record_value(r)
                     db.upsert_record(rtype, domain, val, json.dumps(r), controller.host, site_uuid)
             finally:
                 controller.site_id = orig_site_id
@@ -306,7 +319,7 @@ def sync_dns():
                 for r in current_records:
                     rtype = r.get('type')
                     domain = controller._normalize_domain(r.get('domain'))
-                    val = r.get('ipv4Address') or r.get('alias') or r.get('value') or r.get('host')
+                    val = record_value(r)
                     key = (rtype, domain, val)
                     current_dns_map[key] = r.get('id')
 

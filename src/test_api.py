@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from main import UnifiController
+from main import UnifiController, record_value
 
 class TestUnifiController(unittest.TestCase):
     def setUp(self):
@@ -84,6 +84,36 @@ class TestUnifiController(unittest.TestCase):
         mock_post.assert_called_once()
         args, kwargs = mock_post.call_args
         self.assertIn('uuid-mysite/dns/policies', args[0])
+
+    @patch('requests.post')
+    @patch('requests.get')
+    def test_create_dns_record_strips_response_only_fields(self, mock_get, mock_post):
+        mock_get.return_value = self.mock_site_resolve(mock_get)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_post.return_value = mock_response
+
+        # As fetched from GET /dns/policies: includes response-only id and
+        # metadata, which POST rejects with api.request.unknown-property
+        record = {
+            'type': 'CNAME_RECORD',
+            'id': '1937b12d-47dc-4a27-8f7f-6badb3d06168',
+            'enabled': True,
+            'metadata': {'origin': 'USER_DEFINED'},
+            'domain': 'argo.example.com',
+            'targetDomain': 'traefik.example.com',
+            'ttlSeconds': 0,
+        }
+        success = self.controller.create_dns_record(record)
+
+        self.assertTrue(success)
+        _, kwargs = mock_post.call_args
+        payload = kwargs['json']
+        self.assertNotIn('id', payload)
+        self.assertNotIn('metadata', payload)
+        self.assertEqual(payload['targetDomain'], 'traefik.example.com')
+        self.assertEqual(payload['type'], 'CNAME_RECORD')
 
     @patch('requests.delete')
     @patch('requests.get')
@@ -187,6 +217,16 @@ class TestUnifiController(unittest.TestCase):
         records = self.controller.get_dns_records()
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]['type'], 'A_RECORD')
+
+class TestRecordValue(unittest.TestCase):
+    def test_extracts_value_per_record_type(self):
+        self.assertEqual(record_value({'type': 'A_RECORD', 'ipv4Address': '1.1.1.1'}), '1.1.1.1')
+        self.assertEqual(record_value({'type': 'AAAA_RECORD', 'ipv6Address': '::1'}), '::1')
+        # CNAME policies use targetDomain — previously extracted as None,
+        # which corrupted record identity in the database
+        self.assertEqual(record_value({'type': 'CNAME_RECORD', 'targetDomain': 'x.example.com'}), 'x.example.com')
+        self.assertEqual(record_value({'type': 'TXT_RECORD', 'value': 'v=spf1'}), 'v=spf1')
+
 
 if __name__ == '__main__':
     unittest.main()

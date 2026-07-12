@@ -87,29 +87,34 @@ class DatabaseManager:
                 self._migrate_legacy_schema(conn)
                 for query in queries:
                     conn.execute(query)
-                conn.execute("PRAGMA user_version = 1")
+                conn.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             logger.info(f"Database initialized at {self.db_path}")
         except Exception as e:
             logger.error(f"Failed to initialize database: {str(e)}")
             raise
 
-    def _migrate_legacy_schema(self, conn):
-        """Drop tables from the pre-controller_host schema (user_version 0).
+    # Bump whenever stored rows become incompatible; _migrate_legacy_schema
+    # rebuilds everything below it from the controllers on the next cycle.
+    # 1: sites/origins/events re-keyed by (controller_host, site_uuid)
+    # 2: record targets extracted via record_value() (CNAME targetDomain was
+    #    previously stored as None, corrupting record identity hashes)
+    SCHEMA_VERSION = 2
 
-        The old schema keyed sites/origins/events by site UUID alone and
-        cannot represent two controllers sharing a UUID. Dropped contents are
-        rediscovered from the controllers on the next sync cycle; only
-        sync-event history is actually lost.
+    def _migrate_legacy_schema(self, conn):
+        """Drop tables written by schemas older than SCHEMA_VERSION.
+
+        Dropped contents are rediscovered from the controllers on the next
+        sync cycle; only sync-event history is actually lost.
         """
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version >= 1:
+        if version >= self.SCHEMA_VERSION:
             return
-        for table in ('record_origins', 'sync_events', 'sites'):
+        for table in ('record_origins', 'sync_events', 'sites', 'dns_records'):
             existed = conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
             ).fetchone()
             if existed:
-                logger.warning(f"Migrating schema: dropping legacy table '{table}' (re-keyed by controller_host + site_uuid)")
+                logger.warning(f"Migrating schema v{version} -> v{self.SCHEMA_VERSION}: dropping table '{table}' for rebuild")
                 conn.execute(f"DROP TABLE {table}")
 
     def update_controller(self, host, api_key=None):
