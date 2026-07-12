@@ -148,21 +148,23 @@ def query_db():
         controllers = [dict(r) for r in cursor.execute("SELECT host, last_contact FROM controllers").fetchall()]
         sites = [dict(r) for r in cursor.execute("SELECT uuid, controller_host, name, last_synced FROM sites").fetchall()]
         
-        # Records with origins (site names)
+        # Records with origins (controller + site names)
         records = [dict(r) for r in cursor.execute("""
-            SELECT r.type, r.domain, r.target, GROUP_CONCAT(COALESCE(s.name, o.site_uuid)) as origin_sites
+            SELECT r.type, r.domain, r.target,
+                   GROUP_CONCAT(o.controller_host || ':' || COALESCE(s.name, o.site_uuid)) as origin_sites
             FROM dns_records r
             JOIN record_origins o ON r.id = o.record_id
-            LEFT JOIN sites s ON o.site_uuid = s.uuid
+            LEFT JOIN sites s ON o.site_uuid = s.uuid AND o.controller_host = s.controller_host
             GROUP BY r.id
         """).fetchall()]
-        
+
         # Events with joined info (Last 100)
         events = [dict(r) for r in cursor.execute("""
-            SELECT e.timestamp, r.domain, COALESCE(s.name, e.site_uuid) as site_name, e.status
+            SELECT e.timestamp, r.domain,
+                   e.controller_host || ':' || COALESCE(s.name, e.site_uuid) as site_name, e.status
             FROM sync_events e
             JOIN dns_records r ON e.record_id = r.id
-            LEFT JOIN sites s ON e.site_uuid = s.uuid
+            LEFT JOIN sites s ON e.site_uuid = s.uuid AND e.controller_host = s.controller_host
             ORDER BY e.timestamp DESC
             LIMIT 100
         """).fetchall()]

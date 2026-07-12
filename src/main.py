@@ -280,7 +280,7 @@ def sync_dns():
                     rtype = r.get('type')
                     domain = controller._normalize_domain(r.get('domain'))
                     val = r.get('ipv4Address') or r.get('alias') or r.get('value') or r.get('host')
-                    db.upsert_record(rtype, domain, val, json.dumps(r), site_uuid)
+                    db.upsert_record(rtype, domain, val, json.dumps(r), controller.host, site_uuid)
             finally:
                 controller.site_id = orig_site_id
                 controller.site_name = orig_site_name
@@ -314,23 +314,25 @@ def sync_dns():
                     rtype = rec_row['type']
                     domain = rec_row['domain']
                     target = rec_row['target']
-                    origins = rec_row['origin_site_uuids'].split(',')
-                    
+                    origins = rec_row['origin_keys'].split(',')
+
                     key = (rtype, domain, target)
-                    
+
                     # RULE: Skip if already exists on this site
                     if key in current_dns_map:
                         continue
-                        
-                    # RULE: Skip if this specific site is an origin for this record
-                    if site_uuid in origins:
+
+                    # RULE: Skip if this specific controller+site is an origin for
+                    # this record. Site UUID alone is not enough: the built-in
+                    # "Default" site has the same UUID on every controller.
+                    if db.origin_key(controller.host, site_uuid) in origins:
                         logger.debug(f"Skipping record '{domain}' on site '{site_name}' ({controller.host}) because it originated here.")
                         continue
-                    
+
                     # Create the record
                     record_data = json.loads(rec_row['record_raw'])
                     if controller.create_dns_record(record_data):
-                        db.log_sync_event(rec_row['id'], site_uuid, 'CREATED')
+                        db.log_sync_event(rec_row['id'], controller.host, site_uuid, 'CREATED')
 
             finally:
                 controller.site_id = orig_site_id

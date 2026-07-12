@@ -53,6 +53,8 @@ The application requires a `controllers.json` file. By default, it looks for it 
 ### Origin Tracking
 The script automatically tracks which controller a record was pulled from (either as a DNS policy or a DHCP client). It will **not** attempt to create or update that record on its source controller, ensuring that each controller remains the primary source of truth for its own local records.
 
+Origins are keyed by **controller + site**, not by site UUID alone. This matters because UniFi derives the built-in "Default" site's UUID deterministically — every standalone controller reports the *same* UUID for it. Keying on the UUID alone would make every record look like it originated everywhere, silently disabling sync between controllers that both use the Default site.
+
 ## Deploying on Kubernetes (Helm)
 
 A Helm chart lives in `charts/unifi-dns-sync`. First-time setup:
