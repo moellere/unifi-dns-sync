@@ -53,7 +53,7 @@ spec:
       volumes:
         - name: config-volume
           secret:
-            secretName: {{ include "unifi-dns-sync.fullname" . }}-credentials
+            secretName: {{ .Values.existingSecret | default (printf "%s-credentials" (include "unifi-dns-sync.fullname" .)) }}
         - name: data-volume
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
