@@ -45,7 +45,7 @@ class TestUnifiController(unittest.TestCase):
         # Verify call details for DNS policies
         # mock_get was called twice. Check the last call.
         args, kwargs = mock_get.call_args_list[1]
-        self.assertEqual(args[0], 'https://1.2.3.4/proxy/network/integration/v1/sites/uuid-mysite/dns/policies')
+        self.assertTrue(args[0].startswith('https://1.2.3.4/proxy/network/integration/v1/sites/uuid-mysite/dns/policies?'))
 
     @patch('requests.get')
     def test_get_client_records(self, mock_get):
@@ -84,6 +84,35 @@ class TestUnifiController(unittest.TestCase):
         mock_post.assert_called_once()
         args, kwargs = mock_post.call_args
         self.assertIn('uuid-mysite/dns/policies', args[0])
+
+    @patch('requests.get')
+    def test_get_dns_records_paginates(self, mock_get):
+        # The Integration API silently caps responses at limit=25; the client
+        # must keep requesting until totalCount records have been returned.
+        mock_sites = self.mock_site_resolve(mock_get)
+
+        page1 = MagicMock()
+        page1.status_code = 200
+        page1.json.return_value = {
+            'offset': 0, 'limit': 2, 'count': 2, 'totalCount': 3,
+            'data': [
+                {'type': 'A_RECORD', 'domain': 'a1.com', 'ipv4Address': '1.1.1.1'},
+                {'type': 'A_RECORD', 'domain': 'a2.com', 'ipv4Address': '1.1.1.2'},
+            ]
+        }
+        page2 = MagicMock()
+        page2.status_code = 200
+        page2.json.return_value = {
+            'offset': 2, 'limit': 2, 'count': 1, 'totalCount': 3,
+            'data': [{'type': 'A_RECORD', 'domain': 'a3.com', 'ipv4Address': '1.1.1.3'}]
+        }
+        mock_get.side_effect = [mock_sites, page1, page2]
+
+        records = self.controller.get_dns_records()
+
+        self.assertEqual([r['domain'] for r in records], ['a1.com', 'a2.com', 'a3.com'])
+        # Second policies call must advance the offset past page 1
+        self.assertIn('offset=2', mock_get.call_args_list[2][0][0])
 
     @patch('requests.post')
     @patch('requests.get')

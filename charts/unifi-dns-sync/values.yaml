@@ -46,6 +46,7 @@ existingSecret: ""
 #     sync_dhcp_clients: true
 #     domain_suffix: "home.arpa"
 #     allowed_record_types: ["A_RECORD", "CNAME_RECORD"]
+#     authoritative_subnets: ["10.0.0.0/16"]
 #     verify_ssl: false
 controllers: []
 
