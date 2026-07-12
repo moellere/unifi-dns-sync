@@ -55,6 +55,19 @@ The script automatically tracks which controller a record was pulled from (eithe
 
 Origins are keyed by **controller + site**, not by site UUID alone. This matters because UniFi derives the built-in "Default" site's UUID deterministically — every standalone controller reports the *same* UUID for it. Keying on the UUID alone would make every record look like it originated everywhere, silently disabling sync between controllers that both use the Default site.
 
+### Authoritative Subnets
+Set `authoritative_subnets` (a list of CIDRs) on a controller entry to declare that controller the source of truth for records pointing into those ranges:
+
+```json
+{
+  "host": "10.0.0.1",
+  "api_key": "...",
+  "authoritative_subnets": ["10.0.0.0/16"]
+}
+```
+
+An A/AAAA record whose target falls inside a declared subnet is only replicated if it originated from that subnet's controller. This stops stale records — e.g. an old copy of `service.example.com -> 10.0.6.30` lingering on a *different* controller — from being propagated back onto the network that actually owns `10.0.0.0/16`. Records targeting IPs outside every declared subnet, and CNAME records (domain targets), are not subject to the rule.
+
 ## Deploying on Kubernetes (Helm)
 
 A Helm chart lives in `charts/unifi-dns-sync`. First-time setup:

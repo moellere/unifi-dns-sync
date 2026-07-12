@@ -2,6 +2,7 @@ import os
 import json
 import time
 import logging
+import ipaddress
 import requests
 import threading
 from urllib3.exceptions import InsecureRequestWarning
@@ -44,6 +45,14 @@ class UnifiController:
         self.domain_suffix = config.get('domain_suffix', '').strip()
         self.sync_dhcp_clients = config.get('sync_dhcp_clients', False)
         self.allowed_record_types = config.get('allowed_record_types', ['A_RECORD', 'CNAME_RECORD'])
+        # CIDRs this controller is authoritative for: records whose target IP
+        # falls inside them are only trusted if they originated here.
+        self.authoritative_subnets = []
+        for cidr in config.get('authoritative_subnets', []):
+            try:
+                self.authoritative_subnets.append(ipaddress.ip_network(cidr))
+            except ValueError:
+                logger.error(f"Ignoring invalid authoritative_subnets entry '{cidr}' for {self.host}")
         self.site_id = None
         # Integration API v1 base URL
         self.base_url = f"https://{self.host}/proxy/network/integration/v1"
@@ -90,19 +99,37 @@ class UnifiController:
     def get_all_sites(self):
         """Fetch all sites available on this controller."""
         logger.info(f"Fetching all sites from {self.host}...")
-        url = f"{self.base_url}/sites"
-        try:
-            response = requests.get(url, headers=self.headers, verify=self.verify_ssl, timeout=10)
-            if response.status_code == 200:
-                sites = response.json().get('data', [])
-                logger.info(f"Found {len(sites)} sites on {self.host}")
-                return sites
-            else:
-                logger.error(f"Failed to list sites on {self.host}: {response.status_code} {response.text}")
-                return []
-        except Exception as e:
-            logger.error(f"Error listing sites on {self.host}: {str(e)}")
+        sites = self._get_paged(f"{self.base_url}/sites", 'sites')
+        if sites is None:
             return []
+        logger.info(f"Found {len(sites)} sites on {self.host}")
+        return sites
+
+    def _get_paged(self, url, what):
+        """GET every page of a paginated Integration API collection.
+
+        The API silently defaults to limit=25, so a plain GET only returns
+        the first page. Returns None on error (callers treat it as empty).
+        """
+        items = []
+        offset = 0
+        try:
+            while True:
+                paged_url = f"{url}{'&' if '?' in url else '?'}limit=200&offset={offset}"
+                response = requests.get(paged_url, headers=self.headers, verify=self.verify_ssl, timeout=10)
+                if response.status_code != 200:
+                    logger.error(f"Failed to fetch {what} from {self.host}: {response.status_code} {response.text}")
+                    return None
+                body = response.json()
+                page = body.get('data', [])
+                items.extend(page)
+                total = body.get('totalCount', len(items))
+                if not page or len(items) >= total:
+                    return items
+                offset += len(page)
+        except Exception as e:
+            logger.error(f"Error fetching {what} from {self.host}: {str(e)}")
+            return None
 
     def get_dns_records(self):
         site_id = self._resolve_site_id()
@@ -110,26 +137,18 @@ class UnifiController:
             return []
 
         logger.info(f"Fetching DNS records from {self.host} (Site: {self.site_name})...")
-        url = f"{self.base_url}/sites/{site_id}/dns/policies"
-        try:
-            response = requests.get(url, headers=self.headers, verify=self.verify_ssl, timeout=10)
-            if response.status_code == 200:
-                data = response.json().get('data', [])
-                # Filter by allowed record types and normalize domains
-                filtered_data = []
-                for r in data:
-                    if r.get('type') in self.allowed_record_types:
-                        r['domain'] = self._normalize_domain(r.get('domain'))
-                        filtered_data.append(r)
-                
-                logger.info(f"Successfully fetched {len(filtered_data)} DNS policy records from {self.host} (filtered from {len(data)})")
-                return filtered_data
-            else:
-                logger.error(f"Failed to fetch DNS records from {self.host}: {response.status_code} {response.text}")
-                return []
-        except Exception as e:
-            logger.error(f"Error fetching DNS records from {self.host}: {str(e)}")
+        data = self._get_paged(f"{self.base_url}/sites/{site_id}/dns/policies", 'DNS records')
+        if data is None:
             return []
+        # Filter by allowed record types and normalize domains
+        filtered_data = []
+        for r in data:
+            if r.get('type') in self.allowed_record_types:
+                r['domain'] = self._normalize_domain(r.get('domain'))
+                filtered_data.append(r)
+
+        logger.info(f"Successfully fetched {len(filtered_data)} DNS policy records from {self.host} (filtered from {len(data)})")
+        return filtered_data
 
     def get_client_records(self):
         """Fetch connected clients and convert them to DNS record format."""
@@ -141,52 +160,44 @@ class UnifiController:
             return []
 
         logger.info(f"Fetching client records from {self.host} (Site: {self.site_name})...")
-        url = f"{self.base_url}/sites/{site_id}/clients"
-        try:
-            response = requests.get(url, headers=self.headers, verify=self.verify_ssl, timeout=10)
-            if response.status_code == 200:
-                clients = response.json().get('data', [])
-                records = []
-                for client in clients:
-                    raw_name = client.get('name') or client.get('hostname') or client.get('displayName')
-                    ip = client.get('ipAddress')
-                    
-                    if raw_name and ip:
-                        # 1. Sanitize name: replace spaces with hyphens, remove other DNS-unsafe chars
-                        import re
-                        name = re.sub(r'[^a-zA-Z0-9-]', '-', raw_name).strip('-')
-                        if not name:
-                            continue
-                            
-                        # 2. Smart domain suffixing:
-                        # Only append if it doesn't already end with the suffix
-                        full_name = name
-                        if self.domain_suffix:
-                            suffix = self.domain_suffix.lstrip('.')
-                            if not name.lower().endswith(f".{suffix.lower()}") and name.lower() != suffix.lower():
-                                full_name = f"{name}.{suffix}"
-                        
-                        full_name = self._normalize_domain(full_name)
-                        
-                        # Convert to A_RECORD format for synchronization
-                        records.append({
-                            'type': 'A_RECORD',
-                            'domain': full_name,
-                            'ipv4Address': ip,
-                            'enabled': True,
-                            'ttlSeconds': 3600
-                        })
-                
-                # Filter client records too if A_RECORD is not allowed (unlikely but consistent)
-                filtered_records = [r for r in records if r.get('type') in self.allowed_record_types]
-                logger.info(f"Successfully fetched {len(filtered_records)} client records from {self.host}")
-                return filtered_records
-            else:
-                logger.error(f"Failed to fetch client records from {self.host}: {response.status_code} {response.text}")
-                return []
-        except Exception as e:
-            logger.error(f"Error fetching client records from {self.host}: {str(e)}")
+        clients = self._get_paged(f"{self.base_url}/sites/{site_id}/clients", 'client records')
+        if clients is None:
             return []
+        records = []
+        for client in clients:
+            raw_name = client.get('name') or client.get('hostname') or client.get('displayName')
+            ip = client.get('ipAddress')
+
+            if raw_name and ip:
+                # 1. Sanitize name: replace spaces with hyphens, remove other DNS-unsafe chars
+                import re
+                name = re.sub(r'[^a-zA-Z0-9-]', '-', raw_name).strip('-')
+                if not name:
+                    continue
+
+                # 2. Smart domain suffixing:
+                # Only append if it doesn't already end with the suffix
+                full_name = name
+                if self.domain_suffix:
+                    suffix = self.domain_suffix.lstrip('.')
+                    if not name.lower().endswith(f".{suffix.lower()}") and name.lower() != suffix.lower():
+                        full_name = f"{name}.{suffix}"
+
+                full_name = self._normalize_domain(full_name)
+
+                # Convert to A_RECORD format for synchronization
+                records.append({
+                    'type': 'A_RECORD',
+                    'domain': full_name,
+                    'ipv4Address': ip,
+                    'enabled': True,
+                    'ttlSeconds': 3600
+                })
+
+        # Filter client records too if A_RECORD is not allowed (unlikely but consistent)
+        filtered_records = [r for r in records if r.get('type') in self.allowed_record_types]
+        logger.info(f"Successfully fetched {len(filtered_records)} client records from {self.host}")
+        return filtered_records
 
     def create_dns_record(self, record):
         site_id = self._resolve_site_id()
@@ -302,6 +313,27 @@ def sync_dns():
     all_records = db.get_all_records_with_origins()
     logger.info(f"Consolidated list from DB contains {len(all_records)} unique records.")
 
+    def stale_for(target, origins):
+        """The controller that is authoritative for the record's target IP,
+        when the record did NOT originate there.
+
+        A controller is the source of truth for records pointing into its own
+        subnets. A record targeting controller C's subnet that C never served
+        is legacy data on some other controller — it must not be replicated.
+        """
+        try:
+            ip = ipaddress.ip_address(target)
+        except (ValueError, TypeError):
+            return None
+        owners = [c.host for c in controllers
+                  if any(ip in net for net in c.authoritative_subnets)]
+        if not owners:
+            return None
+        origin_hosts = {o.rsplit('/', 1)[0] for o in origins}
+        if origin_hosts & set(owners):
+            return None
+        return owners[0]
+
     for controller in controllers:
         sites = controller.get_all_sites()
         for site in sites:
@@ -340,6 +372,13 @@ def sync_dns():
                     # "Default" site has the same UUID on every controller.
                     if db.origin_key(controller.host, site_uuid) in origins:
                         logger.debug(f"Skipping record '{domain}' on site '{site_name}' ({controller.host}) because it originated here.")
+                        continue
+
+                    # RULE: Never replicate a record into or out of a subnet
+                    # its authoritative controller doesn't know about.
+                    authority = stale_for(target, origins)
+                    if authority:
+                        logger.info(f"Skipping stale record '{domain}' -> {target}: targets {authority}'s authoritative subnet but did not originate there.")
                         continue
 
                     # Create the record
